@@ -132,7 +132,6 @@
 
 #define TARGET_FLASH_SIZE 2048
 
-
 #define LED_STRIP_TIMER 1
 #define SOFTSERIAL_1_TIMER 2
 #define SOFTSERIAL_2_TIMER 3
@@ -214,6 +213,9 @@ typedef struct
 #define UART7 ((USART_TypeDef *)0x0007)
 #define UART8 ((USART_TypeDef *)0x0008)
 
+#define SIMULATOR_MAX_RC_CHANNELS 16
+#define SIMULATOR_MAX_PWM_CHANNELS 16
+
 typedef struct
 {
     void* test;
@@ -236,9 +238,20 @@ typedef struct {
     double velocity_xyz[3];             // m/s, earth frame
     double position_xyz[3];             // meters, NED from origin
 } fdm_packet;
+
+typedef struct {
+    double timestamp;                   // in seconds
+    uint16_t channels[SIMULATOR_MAX_RC_CHANNELS];             // meters, NED from origin
+} rc_packet;
+
 typedef struct {
     float motor_speed[4];   // normal: [0.0, 1.0], 3D: [-1.0, 1.0]
 } servo_packet;
+
+typedef struct {
+    uint16_t motorCount; //Count of motor in the PWM output.
+    float pwm_output_raw[SIMULATOR_MAX_PWM_CHANNELS];   // Raw PWM from 1100 to 1900
+} servo_packet_raw;
 
 void FLASH_Unlock(void);
 void FLASH_Lock(void);
