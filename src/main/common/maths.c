@@ -258,7 +258,7 @@ void rotateV(struct fp_vector *v, fp_angles_t *delta)
 #define QMF_SORTF(a,b) { if ((a)>(b)) QMF_SWAPF((a),(b)); }
 #define QMF_SWAPF(a,b) { float temp=(a);(a)=(b);(b)=temp; }
 
-int32_t quickMedianFilter3(int32_t * v)
+FAST_CODE int32_t quickMedianFilter3(int32_t * v)
 {
     int32_t p[3];
     QMF_COPY(p, v, 3);
@@ -306,7 +306,7 @@ int32_t quickMedianFilter9(int32_t * v)
     return p[4];
 }
 
-float quickMedianFilter3f(float * v)
+FAST_CODE float quickMedianFilter3f(float * v)
 {
     float p[3];
     QMF_COPY(p, v, 3);

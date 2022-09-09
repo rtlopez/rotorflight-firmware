@@ -28,6 +28,7 @@
 #include "build/debug.h"
 
 #include "common/utils.h"
+#include "common/maths.h"
 
 #include "drivers/io.h"
 #include "drivers/nvic.h"
@@ -67,6 +68,7 @@
 #define FREQ_PERIOD_MIN(p)    ((p)*3/4)
 #define FREQ_PERIOD_MAX(p)    ((p)*3/2)
 
+#define FREQ_SAMPLES_COUNT    3
 
 #define FILTER_UPDATE(_var,_value,_coef) \
     ((_var) += ((_value)-(_var))/(_coef))
@@ -82,9 +84,13 @@ typedef struct {
 
     bool enabled;
 
+    uint8_t index;
+
+    float freqs[FREQ_SAMPLES_COUNT];
     float freq;
     float clock;
 
+    uin32_t periods[FREQ_SAMPLES_COUNT];
     int32_t  period;
     int32_t  percoef;
     uint16_t capture;
@@ -149,6 +155,10 @@ static void freqReset(freqInputPort_t *input)
 {
     input->freq = 0.0f;
     input->period = FREQ_PERIOD_INIT;
+    for (size_t i = 0; i < FREQ_SAMPLES_COUNT; i++) {
+        input->periods[i] = FREQ_PERIOD_INIT;
+        input->freqs[i] = 0.0f;
+    }
     input->capture = 0;
     input->failures = 0;
     input->overflows = 0;
@@ -165,15 +175,22 @@ static void freqEdgeCallback(timerCCHandlerRec_t *cbRec, captureCompare_t captur
     if (input->capture) {
 
         // Must use uint16 here because of wraparound
-        uint16_t period = capture - input->capture;
+        const uint16_t period = capture - input->capture;
 
-        UPDATE_PERIOD_FILTER(input, period);
+        input->index = (input->index + 1) % FREQ_SAMPLES_COUNT;
+
+        input->periods[input->index] = period;
+        const uint16_t periodMedian = quickMedianFilter3(input->periods);
+        UPDATE_PERIOD_FILTER(input, periodMedian);
+
+        const float freq = input->clock / period;
+        input->freqs[input->index] = freq;
+        const float freqMedian = quickMedianFilter3f(input->freqs);
 
         // Signal conditioning. Update freq filter only if period within acceptable range.
         if (period > FREQ_PERIOD_MIN(input->period) && period < FREQ_PERIOD_MAX(input->period)) {
-            float freq = input->clock / period;
             if (freq > FREQ_RANGE_MIN && freq < FREQ_RANGE_MAX) {
-                UPDATE_FREQ_FILTER(input, freq);
+                UPDATE_FREQ_FILTER(input, freqMedian);
             }
         }
 
@@ -183,11 +200,17 @@ static void freqEdgeCallback(timerCCHandlerRec_t *cbRec, captureCompare_t captur
         if (input->period < FREQ_SHIFT_MIN && input->prescaler > FREQ_PRESCALER_MIN) {
             freqSetBaseClock(input, input->prescaler >> 1);
             input->period <<= 1;
+            for (size_t i = 0; i < FREQ_SAMPLES_COUNT; i++) {
+                input->periods[i] <<= 1;
+            }
             capture = 0;
         }
         else if (input->period > FREQ_SHIFT_MAX && input->prescaler < FREQ_PRESCALER_MAX) {
             freqSetBaseClock(input, input->prescaler << 1);
             input->period >>= 1;
+            for (size_t i = 0; i < FREQ_SAMPLES_COUNT; i++) {
+                input->periods[i] >>= 1;
+            }
             capture = 0;
         }
 
