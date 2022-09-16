@@ -90,7 +90,7 @@ typedef struct {
     float freq;
     float clock;
 
-    uin32_t periods[FREQ_SAMPLES_COUNT];
+    int32_t periods[FREQ_SAMPLES_COUNT];
     int32_t  period;
     int32_t  percoef;
     uint16_t capture;
@@ -107,19 +107,6 @@ typedef struct {
 } freqInputPort_t;
 
 static freqInputPort_t freqInputPorts[FREQ_SENSOR_PORT_COUNT];
-
-
-static inline void freqDebug(freqInputPort_t *input)
-{
-#ifdef FREQ_DEBUG
-    DEBUG_SET(DEBUG_FREQ_SENSOR, 0, input->period);
-    DEBUG_SET(DEBUG_FREQ_SENSOR, 1, input->percoef);
-    DEBUG_SET(DEBUG_FREQ_SENSOR, 2, 32 - __builtin_clz(input->prescaler));
-    DEBUG_SET(DEBUG_FREQ_SENSOR, 3, input->freq * 10);
-#else
-    UNUSED(input);
-#endif
-}
 
 /*
  * Set the base clock to a frequency that gives a reading in range
@@ -165,7 +152,12 @@ static void freqReset(freqInputPort_t *input)
 
     freqSetBaseClock(input, FREQ_PRESCALER_MAX);
 
-    freqDebug(input);
+#ifdef FREQ_DEBUG
+    DEBUG_SET(DEBUG_FREQ_SENSOR, 0, FREQ_PERIOD_INIT >> 1);
+    DEBUG_SET(DEBUG_FREQ_SENSOR, 1, FREQ_PERIOD_INIT >> 1);
+    DEBUG_SET(DEBUG_FREQ_SENSOR, 2, 32 - __builtin_clz(input->prescaler));
+    DEBUG_SET(DEBUG_FREQ_SENSOR, 3, lrintf(input->freq * 10.0));
+#endif
 }
 
 static void freqEdgeCallback(timerCCHandlerRec_t *cbRec, captureCompare_t capture)
@@ -181,20 +173,23 @@ static void freqEdgeCallback(timerCCHandlerRec_t *cbRec, captureCompare_t captur
 
         input->periods[input->index] = period;
         const uint16_t periodMedian = quickMedianFilter3(input->periods);
-        UPDATE_PERIOD_FILTER(input, periodMedian);
+        UPDATE_PERIOD_FILTER(input, period);
 
-        const float freq = input->clock / period;
+        const float freq = input->clock / periodMedian;
         input->freqs[input->index] = freq;
         const float freqMedian = quickMedianFilter3f(input->freqs);
 
-        // Signal conditioning. Update freq filter only if period within acceptable range.
-        if (period > FREQ_PERIOD_MIN(input->period) && period < FREQ_PERIOD_MAX(input->period)) {
-            if (freq > FREQ_RANGE_MIN && freq < FREQ_RANGE_MAX) {
-                UPDATE_FREQ_FILTER(input, freqMedian);
-            }
+        // Signal conditioning. Update freq filter only in acceptable range.
+        if (freqMedian > FREQ_RANGE_MIN && freqMedian < FREQ_RANGE_MAX) {
+            UPDATE_FREQ_FILTER(input, freqMedian);
         }
 
-        freqDebug(input);
+#ifdef FREQ_DEBUG
+        DEBUG_SET(DEBUG_FREQ_SENSOR, 0, period >> 1); // shift 1 bit to avoid negative values in blackbox
+        DEBUG_SET(DEBUG_FREQ_SENSOR, 1, periodMedian >> 1);
+        DEBUG_SET(DEBUG_FREQ_SENSOR, 2, 32 - __builtin_clz(input->prescaler));
+        DEBUG_SET(DEBUG_FREQ_SENSOR, 3, lrintf(input->freq * 10.0));
+#endif
 
         // Filtered period out of range. Change prescaler.
         if (input->period < FREQ_SHIFT_MIN && input->prescaler > FREQ_PRESCALER_MIN) {
